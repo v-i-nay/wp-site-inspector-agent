@@ -1,3 +1,4 @@
-flask
-request
+Flask==3.0.2
+requests==2.31.0
 gunicorn
+python-3.11.4
