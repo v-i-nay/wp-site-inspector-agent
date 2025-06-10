@@ -1,40 +1,72 @@
-import requests
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, Request, HTTPException
+import httpx
 import os
+import logging
+from dotenv import load_dotenv
 
-app = Flask(__name__)
+# Load environment variables
+load_dotenv()
 
-# Get OpenRouter API Key
-api_key = os.getenv("OPENROUTER_API_KEY")
+app = FastAPI()
+logger = logging.getLogger(__name__)
 
-@app.route("/")
-def home():
-    return "DeepSeek AI agent is running!"
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    data = request.get_json()
-    message = data.get("message", "")
-    if not message:
-        return jsonify({"error": "No message provided"}), 400
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+if not OPENROUTER_API_KEY:
+    raise RuntimeError("OPENROUTER_API_KEY environment variable is missing")
 
-    url = "https://api.openrouter.ai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "deepseek-v3",
-        "messages": [{"role": "user", "content": message}]
-    }
+@app.get("/")
+async def root():
+    return {"status": "WP Site Inspector is live 🚀"}
 
+@app.post("/chat")
+async def chat(request: Request):
     try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        answer = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No reply")
-        return jsonify({"reply": answer})
-    except requests.exceptions.RequestException as e:
-        return jsonify({"error": str(e)}), 500
+        data = await request.json()
+        message = data.get("message", "")
+        
+        if not message:
+            raise HTTPException(
+                status_code=400,
+                detail="No message provided"
+            )
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=3000, debug=True)
+        url = "https://api.openrouter.ai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "deepseek-v3",
+            "messages": [{"role": "user", "content": message}]
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            
+            result = response.json()
+            answer = result.get("choices", [{}])[0].get("message", {}).get("content", "No reply")
+            
+            return {"reply": answer}
+
+    except httpx.TimeoutException:
+        logger.error("OpenRouter API timeout")
+        raise HTTPException(
+            status_code=504,
+            detail="OpenRouter API timed out"
+        )
+    except httpx.RequestError as e:
+        logger.error(f"Network error: {str(e)}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Network error contacting OpenRouter: {str(e)}"
+        )
+    except Exception as e:
+        logger.exception("Unexpected error")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
