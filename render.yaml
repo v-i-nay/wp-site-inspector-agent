@@ -2,9 +2,4 @@ services:
   - type: web
     name: wp-site-inspector-agent
     env: python
-    buildCommand: |
-      echo "Listing files in current directory:"
-      ls -la
-      echo "Installing requirements..."
-      pip install -r requirements.txt
     startCommand: gunicorn main:app
